@@ -96,6 +96,21 @@ jobs:
           rm -rf src-tauri/gen/apple/assets
           mkdir -p src-tauri/gen/apple/assets
           ditto src src-tauri/gen/apple/assets
+          ditto src/scripts/templates src-tauri/gen/apple/assets/frontend-templates
+          ditto default src-tauri/gen/apple/assets/default
+
+          EXTENSION_ASSETS_DIR="src-tauri/gen/apple/assets/frontend-extensions"
+          mkdir -p "$EXTENSION_ASSETS_DIR"
+          find src/scripts/extensions -mindepth 2 -maxdepth 2 -type f -name "*.html" -print0 | while IFS= read -r -d '' file; do
+            extension="$(basename "$(dirname "$file")")"
+            mkdir -p "$EXTENSION_ASSETS_DIR/$extension"
+            cp "$file" "$EXTENSION_ASSETS_DIR/$extension/$(basename "$file")"
+          done
+
+          test -f src-tauri/gen/apple/assets/frontend-templates/welcomePanel.html
+          test -f src-tauri/gen/apple/assets/frontend-templates/wandMenu.html
+          test -f src-tauri/gen/apple/assets/frontend-templates/wandButton.html
+          test -f src-tauri/gen/apple/assets/default/content/index.json
 
       - name: Build unsigned archive with xcodebuild
         id: xcode_build
