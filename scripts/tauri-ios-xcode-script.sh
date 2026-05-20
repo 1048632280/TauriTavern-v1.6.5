@@ -60,10 +60,43 @@ normalize_ios_app_icons() {
   xcrun --sdk macosx swift "$SCRIPT_DIR/ios-opaque-app-icons.swift" "$app_icon_set"
 }
 
+use_prebuilt_ios_lib() {
+  local configuration="${CONFIGURATION:?}"
+  local srcroot="${SRCROOT:-$REPO_ROOT/src-tauri/gen/apple}"
+  local missing=0
+
+  for arch in ${ARCHS:-arm64}; do
+    case "$arch" in
+      arm64 | x86_64)
+        local lib_path="$srcroot/Externals/$arch/$configuration/libapp.a"
+        if [ ! -f "$lib_path" ]; then
+          echo "error: prebuilt Rust library was not found at $lib_path" >&2
+          missing=1
+        fi
+        ;;
+      *)
+        echo "warning: skipping prebuilt Rust library check for unsupported arch '$arch'" >&2
+        ;;
+    esac
+  done
+
+  if [ "$missing" -ne 0 ]; then
+    exit 1
+  fi
+
+  echo "Using prebuilt Rust library for iOS ${CONFIGURATION} (${ARCHS:-arm64})."
+  normalize_ios_app_icons
+}
+
 build_tauri_ios_target() {
   run_tauri_ios_xcode_script "$@"
   normalize_ios_app_icons
 }
+
+if [ "${TAURITAVERN_USE_PREBUILT_IOS_LIB:-}" = "1" ]; then
+  use_prebuilt_ios_lib
+  exit 0
+fi
 
 if ! ensure_node_on_path; then
   echo "error: node was not found in Xcode's PATH." >&2

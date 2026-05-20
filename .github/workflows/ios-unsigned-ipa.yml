@@ -110,6 +110,7 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             AD_HOC_CODE_SIGNING_ALLOWED=YES \
             DEVELOPMENT_TEAM="" \
+            TAURITAVERN_USE_PREBUILT_IOS_LIB=1 \
             2>&1 | tee "$XCODEBUILD_LOG" | xcpretty; then
             echo "::group::Raw xcodebuild log tail"
             tail -n 300 "$XCODEBUILD_LOG"
