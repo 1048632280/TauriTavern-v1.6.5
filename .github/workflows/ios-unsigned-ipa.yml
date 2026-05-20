@@ -91,6 +91,12 @@ jobs:
           mkdir -p "$EXTERNALS_DIR"
           cp "$LIB_PATH" "$EXTERNALS_DIR/libapp.a"
 
+      - name: Prepare iOS frontend assets
+        run: |
+          rm -rf src-tauri/gen/apple/assets
+          mkdir -p src-tauri/gen/apple/assets
+          ditto src src-tauri/gen/apple/assets
+
       - name: Build unsigned archive with xcodebuild
         id: xcode_build
         env:
