@@ -1,0 +1,138 @@
+#tauritavern_version_settings .inline-drawer-content {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+#tauritavern_version_settings [hidden] {
+    display: none !important;
+}
+
+#tauritavern_version_settings .ttv-info-table {
+    border: 1px solid var(--SmartThemeBorderColor);
+    border-radius: 10px;
+    background-color: var(--black30a);
+}
+
+#tauritavern_version_settings .ttv-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 8px 10px;
+}
+
+#tauritavern_version_settings .ttv-row + .ttv-row {
+    border-top: 1px solid var(--SmartThemeBorderColor);
+}
+
+#tauritavern_version_settings .ttv-label {
+    opacity: 0.85;
+    white-space: nowrap;
+}
+
+#tauritavern_version_settings .ttv-row strong {
+    text-align: right;
+    word-break: break-word;
+}
+
+#tauritavern_version_settings .ttv-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+#tauritavern_version_settings .ttv-update-result {
+    display: none;
+    padding: 10px;
+    border: 1px solid var(--SmartThemeBorderColor);
+    border-radius: 10px;
+    background-color: var(--black30a);
+}
+
+#tauritavern_version_settings .ttv-update-result > * + * {
+    margin-top: 10px;
+}
+
+#tauritavern_version_settings .ttv-update-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+#tauritavern_version_settings .ttv-update-title {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 8px;
+}
+
+#tauritavern_version_settings .ttv-update-label {
+    opacity: 0.85;
+    white-space: nowrap;
+}
+
+#tauritavern_version_settings .ttv-update-changelog {
+    max-height: 220px;
+    overflow: auto;
+    padding: 8px;
+    border-radius: 8px;
+    border: 1px solid var(--SmartThemeBorderColor);
+    background-color: var(--black20a);
+}
+
+#tauritavern_version_settings .ttv-update-changelog > :first-child {
+    margin-top: 0;
+}
+
+#tauritavern_version_settings .ttv-update-changelog > :last-child {
+    margin-bottom: 0;
+}
+
+.ttv-update-popup {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    max-height: min(68vh, 640px);
+}
+
+.ttv-update-popup-header {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.ttv-update-popup h3,
+.ttv-update-popup-title {
+    margin: 0;
+}
+
+.ttv-update-popup-meta,
+.ttv-update-popup-note {
+    margin: 0;
+    opacity: 0.85;
+}
+
+.ttv-update-popup-note {
+    font-size: 0.95rem;
+}
+
+.ttv-update-popup-body {
+    overflow: auto;
+    padding: 10px 12px;
+    border-radius: 8px;
+    border: 1px solid var(--SmartThemeBorderColor);
+    background-color: var(--black20a);
+}
+
+@media (max-width: 600px) {
+    #tauritavern_version_settings .ttv-row {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+
+    #tauritavern_version_settings .ttv-row strong {
+        text-align: left;
+    }
+}
