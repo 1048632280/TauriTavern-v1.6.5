@@ -1,19 +1,12 @@
-import { DOMPurify } from '../../../lib.js';
-import { CLIENT_VERSION, converter, displayVersion, eventSource, event_types, reloadMarkdownProcessor } from '../../../script.js';
+import { CLIENT_VERSION, displayVersion } from '../../../script.js';
 import {
-    checkForUpdate,
     getClientVersion as getBridgeClientVersion,
-    getTauriTavernSettings,
     invoke,
     openExternalUrl,
-    updateTauriTavernSettings,
 } from '../../../tauri-bridge.js';
 import { renderExtensionTemplateAsync } from '../../extensions.js';
 import { translate } from '../../i18n.js';
-import { POPUP_RESULT, POPUP_TYPE, Popup } from '../../popup.js';
-import { stripCommandErrorPrefixes } from '../../util/command-error-utils.js';
-import { isGitHubRateLimitMessage } from '../../util/github-rate-limit.js';
-import { githubRateLimitStopper } from '../../util/github-rate-limit-stopper.js';
+import { POPUP_TYPE, Popup } from '../../popup.js';
 import { isIosRuntime } from '../../util/mobile-runtime.js';
 import { extractErrorText, toUserFacingErrorText } from '../../util/user-facing-error.js';
 import { getActiveIosPolicyCapabilities } from '../../tauritavern/ios-policy.js';
@@ -27,16 +20,6 @@ const LINKS = Object.freeze({
 
 const UNKNOWN_VALUE = 'UNKNOWN';
 
-let latestUpdateResult = null;
-let startupUpdateCheckPromise = null;
-let startupUpdatePopupShown = false;
-let tauriTavernSettingsCache = null;
-let tauriTavernSettingsPromise = null;
-
-function resolveIosUpdateCapabilities() {
-    return getActiveIosPolicyCapabilities()?.updates ?? null;
-}
-
 function resolveIosAboutCapabilities() {
     return getActiveIosPolicyCapabilities()?.about ?? null;
 }
@@ -48,16 +31,6 @@ function localize(key, fallback) {
 function localizeTemplate(key, fallback, ...values) {
     const template = localize(key, fallback);
     return template.replace(/\$\{(\d+)\}/g, (_, index) => String(values[Number(index)] ?? ''));
-}
-
-function tripGitHubRateLimitIfNeeded(error) {
-    const normalized = stripCommandErrorPrefixes(extractErrorText(error));
-    if (!isGitHubRateLimitMessage(normalized)) {
-        return false;
-    }
-
-    githubRateLimitStopper.trip();
-    return true;
 }
 
 function extractCompatVersion(agent) {
@@ -207,265 +180,6 @@ function onExternalLinkClick(event) {
     void openVersionUrl(href);
 }
 
-function ensureMarkdownConverter() {
-    return converter || reloadMarkdownProcessor();
-}
-
-function renderChangelogHtml(markdown) {
-    const normalized = String(markdown || '').trim();
-    if (!normalized) {
-        return `<p>${localize('ttv_version.no_changelog', 'No changelog available.')}</p>`;
-    }
-
-    const html = ensureMarkdownConverter().makeHtml(normalized);
-    return DOMPurify.sanitize(html);
-}
-
-function showUpdateResult(result) {
-    const release = result?.latest_release;
-    if (!release) {
-        return;
-    }
-
-    latestUpdateResult = result;
-
-    const $result = $('#tauritavern_update_result');
-    if (!$result.length) {
-        return;
-    }
-
-    $('#tauritavern_update_version').text(release.version || release.tag_name || UNKNOWN_VALUE);
-    $('#tauritavern_update_changelog').html(renderChangelogHtml(release.body));
-    $('#tauritavern_update_download').attr('href', release.html_url);
-
-    if ($result.is(':hidden')) {
-        $result.slideDown(200);
-    }
-}
-
-function hideUpdateResult() {
-    const $result = $('#tauritavern_update_result');
-    if ($result.length && $result.is(':visible')) {
-        $result.slideUp(200);
-    }
-}
-
-async function onCheckUpdateClick() {
-    if (githubRateLimitStopper.isTripped()) {
-        return;
-    }
-
-    const updateCaps = resolveIosUpdateCapabilities();
-    if (updateCaps && updateCaps.manual_check === false) {
-        globalThis.toastr?.error?.(
-            localize(
-                'ttv_version.check_update_disabled',
-                'Manual update checking is disabled by your iOS policy.',
-            ),
-        );
-        return;
-    }
-
-    const $btn = $('#tauritavern_check_update');
-    const $icon = $btn.find('i');
-    const $text = $btn.find('span');
-    const defaultText = String($text.data('defaultLabel') || $text.text()).trim();
-
-    $text.data('defaultLabel', defaultText);
-    $icon.addClass('fa-spin');
-    $text.text(localize('ttv_version.checking_updates', 'Checking for updates...'));
-    $btn.prop('disabled', true);
-
-    try {
-        const result = await checkForUpdate();
-        if (result?.has_update && result?.latest_release) {
-            showUpdateResult(result);
-        } else {
-            latestUpdateResult = null;
-            globalThis.toastr?.info?.(localize('ttv_version.no_update', 'You are already on the latest version.'));
-            hideUpdateResult();
-        }
-    } catch (error) {
-        if (tripGitHubRateLimitIfNeeded(error)) {
-            return;
-        }
-
-        globalThis.toastr?.error?.(
-            localizeTemplate(
-                'ttv_version.check_update_failed',
-                'Failed to check for updates: ${0}',
-                toUserFacingErrorText(error) || extractErrorText(error),
-            ),
-        );
-    } finally {
-        $icon.removeClass('fa-spin');
-        $text.text(defaultText);
-        $btn.prop('disabled', false);
-    }
-}
-
-async function getTauriTavernSettingsState() {
-    if (tauriTavernSettingsCache) {
-        return tauriTavernSettingsCache;
-    }
-
-    if (!tauriTavernSettingsPromise) {
-        tauriTavernSettingsPromise = getTauriTavernSettings()
-            .then((settings) => {
-                tauriTavernSettingsCache = settings;
-                return settings;
-            })
-            .finally(() => {
-                tauriTavernSettingsPromise = null;
-            });
-    }
-
-    return tauriTavernSettingsPromise;
-}
-
-function getStartupUpdatePopupToken(result) {
-    const releaseVersion = String(result?.latest_release?.version || result?.latest_release?.tag_name || '').trim();
-    const currentVersion = String(result?.current_version || '').trim();
-
-    return releaseVersion ? `${currentVersion}->${releaseVersion}` : '';
-}
-
-async function hasSeenStartupUpdate(result) {
-    const token = getStartupUpdatePopupToken(result);
-    if (token === '') {
-        return false;
-    }
-
-    const settings = await getTauriTavernSettingsState();
-    return settings.updates.startup_popup.dismissed_release_token === token;
-}
-
-async function rememberStartupUpdate(result) {
-    const token = getStartupUpdatePopupToken(result);
-    if (token === '') {
-        return;
-    }
-
-    tauriTavernSettingsCache = await updateTauriTavernSettings({
-        updates: {
-            startup_popup: {
-                dismissed_release_token: token,
-            },
-        },
-    });
-}
-
-function buildStartupUpdatePopupContent(result) {
-    const release = result.latest_release;
-    const root = document.createElement('div');
-    root.className = 'ttv-update-popup';
-
-    const header = document.createElement('div');
-    header.className = 'ttv-update-popup-header';
-
-    const title = document.createElement('h3');
-    title.className = 'ttv-update-popup-title';
-    title.textContent = localizeTemplate(
-        'ttv_version.popup_title',
-        'New TauriTavern ${0} is available',
-        release.version,
-    );
-    header.appendChild(title);
-
-    const meta = document.createElement('p');
-    meta.className = 'ttv-update-popup-meta';
-    meta.textContent = `TauriTavern ${result.current_version}  \u2192  ${release.version}`;
-    header.appendChild(meta);
-
-    const note = document.createElement('p');
-    note.className = 'ttv-update-popup-note';
-    note.textContent = localize(
-        'ttv_version.popup_note',
-        'You can update later. Manual update checking remains available.',
-    );
-    header.appendChild(note);
-
-    root.appendChild(header);
-
-    const body = document.createElement('div');
-    body.className = 'ttv-update-popup-body';
-    body.innerHTML = renderChangelogHtml(release.body);
-    root.appendChild(body);
-
-    return root;
-}
-
-async function showStartupUpdatePopup(result) {
-    const popup = new Popup(buildStartupUpdatePopupContent(result), POPUP_TYPE.CONFIRM, '', {
-        okButton: localize('ttv_version.popup_download', 'Download'),
-        cancelButton: localize('ttv_version.popup_later', 'Later'),
-        allowVerticalScrolling: true,
-        wide: true,
-        wider: true,
-    });
-
-    const popupResult = await popup.show();
-    await rememberStartupUpdate(result);
-
-    if (popupResult === POPUP_RESULT.AFFIRMATIVE) {
-        await openVersionUrl(result.latest_release.html_url);
-    }
-}
-
-async function runStartupUpdateCheck() {
-    if (githubRateLimitStopper.isTripped()) {
-        return;
-    }
-
-    if (startupUpdateCheckPromise) {
-        return startupUpdateCheckPromise;
-    }
-
-    startupUpdateCheckPromise = (async () => {
-        let result;
-
-        try {
-            result = await checkForUpdate();
-        } catch (error) {
-            if (tripGitHubRateLimitIfNeeded(error)) {
-                return;
-            }
-
-            console.warn('Startup update check failed:', error);
-            return;
-        }
-
-        if (!result?.has_update || !result?.latest_release) {
-            return;
-        }
-
-        showUpdateResult(result);
-
-        if (startupUpdatePopupShown || await hasSeenStartupUpdate(result)) {
-            return;
-        }
-
-        startupUpdatePopupShown = true;
-        await showStartupUpdatePopup(result);
-    })();
-
-    try {
-        await startupUpdateCheckPromise;
-    } finally {
-        startupUpdateCheckPromise = null;
-    }
-}
-
-eventSource.once(event_types.APP_READY, () => {
-    const updateCaps = resolveIosUpdateCapabilities();
-    if (updateCaps && updateCaps.startup_check === false) {
-        console.debug('Startup update check skipped: disabled by iOS policy');
-        return;
-    }
-
-    void runStartupUpdateCheck();
-});
-
 jQuery(async () => {
     const container = $('#tauritavern_version_container');
     if (!container.length) {
@@ -485,31 +199,8 @@ jQuery(async () => {
         gitRow.hidden = true;
     }
 
-    const updateCaps = resolveIosUpdateCapabilities();
-    if (updateCaps && updateCaps.manual_check === false) {
-        $('#tauritavern_check_update').remove();
-
-        const compatRow = document.getElementById('ttv-compat-row');
-        if (!(compatRow instanceof HTMLElement)) {
-            throw new Error('[TauriTavern][iOSPolicy] ttv-compat-row not found');
-        }
-        compatRow.hidden = true;
-
-        const discordLink = document.getElementById('ttv-discord-link');
-        if (!(discordLink instanceof HTMLElement)) {
-            throw new Error('[TauriTavern][iOSPolicy] ttv-discord-link not found');
-        }
-        discordLink.hidden = true;
-    } else {
-        $('#tauritavern_check_update').on('click', onCheckUpdateClick);
-    }
-    $('#tauritavern_update_dismiss').on('click', hideUpdateResult);
     container.on('click', 'a[target="_blank"]', onExternalLinkClick);
 
     const versionInfo = await resolveVersionInfo();
     renderVersionInfo(versionInfo);
-
-    if (latestUpdateResult?.has_update && latestUpdateResult?.latest_release) {
-        showUpdateResult(latestUpdateResult);
-    }
 });
