@@ -1,16 +1,11 @@
 # Uncomment the next line to define a global platform for your project
 
 target 'tauritavern_iOS' do
-platform :ios, '15.5'
+  platform :ios, '15.5'
   # Pods for tauritavern_iOS
 end
 
-target 'tauritavern_macOS' do
-platform :osx, '11.0'
-  # Pods for tauritavern_macOS
-end
-
-# Delete the deployment target for iOS and macOS, causing it to be inherited from the Podfile
+# Delete the iOS deployment target, causing it to be inherited from the Podfile
 post_install do |installer|
  installer.pods_project.targets.each do |target|
   target.build_configurations.each do |config|

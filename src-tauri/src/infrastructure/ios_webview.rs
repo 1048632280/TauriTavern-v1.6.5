@@ -47,7 +47,8 @@ unsafe fn enable_element_fullscreen(wkwebview: &objc2::runtime::AnyObject) {
         let configuration: Retained<AnyObject> = objc2::msg_send![wkwebview, configuration];
         objc2::msg_send![&*configuration, preferences]
     };
-    if preferences.responds_to_selector(sel) {
+    let responds: bool = objc2::msg_send![&*preferences, respondsToSelector: sel];
+    if responds {
         let _: () = objc2::msg_send![&*preferences, setElementFullscreenEnabled: true];
     }
 }
