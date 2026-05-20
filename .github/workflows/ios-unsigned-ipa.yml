@@ -72,7 +72,6 @@ jobs:
         env:
           CONFIGURATION: ${{ inputs.configuration || 'release' }}
         run: |
-          CONFIG_UPPER=$(echo "$CONFIGURATION" | tr '[:lower:]' '[:upper:]')
           cargo build \
             --manifest-path src-tauri/Cargo.toml \
             --target aarch64-apple-ios \
@@ -80,7 +79,7 @@ jobs:
             --lib
 
           # Copy to location Xcode expects
-          EXTERNALS_DIR="src-tauri/gen/apple/Externals/arm64/$CONFIG_UPPER"
+          EXTERNALS_DIR="src-tauri/gen/apple/Externals/arm64/$CONFIGURATION"
           LIB_PROFILE_DIR="$( [ "$CONFIGURATION" = "release" ] && echo release || echo debug )"
           LIB_PATH="src-tauri/target/aarch64-apple-ios/$LIB_PROFILE_DIR/libtauritavern_lib.a"
           if [ ! -f "$LIB_PATH" ]; then
@@ -97,12 +96,13 @@ jobs:
         env:
           CONFIGURATION: ${{ inputs.configuration || 'release' }}
         run: |
-          CONFIG_UPPER=$(echo "$CONFIGURATION" | tr '[:lower:]' '[:upper:]')
+          set -o pipefail
+          XCODEBUILD_LOG="$RUNNER_TEMP/xcodebuild-archive.log"
 
-          xcodebuild archive \
+          if ! xcodebuild archive \
             -workspace src-tauri/gen/apple/tauritavern.xcworkspace \
             -scheme tauritavern_iOS \
-            -configuration "$CONFIG_UPPER" \
+            -configuration "$CONFIGURATION" \
             -destination "generic/platform=iOS" \
             -archivePath "$RUNNER_TEMP/tauritavern.xcarchive" \
             CODE_SIGN_IDENTITY="" \
@@ -110,7 +110,12 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             AD_HOC_CODE_SIGNING_ALLOWED=YES \
             DEVELOPMENT_TEAM="" \
-            | xcpretty || true
+            2>&1 | tee "$XCODEBUILD_LOG" | xcpretty; then
+            echo "::group::Raw xcodebuild log tail"
+            tail -n 300 "$XCODEBUILD_LOG"
+            echo "::endgroup::"
+            exit 1
+          fi
 
           # Verify archive was created
           if [ ! -d "$RUNNER_TEMP/tauritavern.xcarchive" ]; then
