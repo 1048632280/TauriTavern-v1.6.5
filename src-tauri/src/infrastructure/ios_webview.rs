@@ -36,8 +36,18 @@ unsafe fn disable_content_inset_adjustment(wkwebview: &objc2::runtime::AnyObject
 unsafe fn enable_element_fullscreen(wkwebview: &objc2::runtime::AnyObject) {
     use objc2::rc::Retained;
     use objc2::runtime::AnyObject;
+    use objc2::runtime::Sel;
 
-    let configuration: Retained<AnyObject> = objc2::msg_send![wkwebview, configuration];
-    let preferences: Retained<AnyObject> = objc2::msg_send![&*configuration, preferences];
-    let _: () = objc2::msg_send![&*preferences, setElementFullscreenEnabled: true];
+    // setElementFullscreenEnabled: was introduced in iOS 16.0.
+    // On iOS 15.x the selector does not exist; sending an unknown selector to an ObjC object
+    // is safe (returns nil / no-op for void returns), but we guard explicitly to be clear
+    // about intent and to avoid any undefined behaviour if that assumption ever changes.
+    let sel = Sel::register(c"setElementFullscreenEnabled:");
+    let preferences: Retained<AnyObject> = {
+        let configuration: Retained<AnyObject> = objc2::msg_send![wkwebview, configuration];
+        objc2::msg_send![&*configuration, preferences]
+    };
+    if preferences.responds_to_selector(sel) {
+        let _: () = objc2::msg_send![&*preferences, setElementFullscreenEnabled: true];
+    }
 }
