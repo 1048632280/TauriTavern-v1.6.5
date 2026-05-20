@@ -1,0 +1,138 @@
+name: iOS Unsigned IPA Build
+
+on:
+  workflow_dispatch:
+    inputs:
+      configuration:
+        description: "Build configuration"
+        required: false
+        default: "release"
+        type: choice
+        options:
+          - release
+          - debug
+  pull_request:
+    branches:
+      - "**"
+    paths:
+      - "src-tauri/**"
+      - "src/**"
+      - "package.json"
+      - ".github/workflows/ios-unsigned-ipa.yml"
+
+concurrency:
+  group: ios-unsigned-ipa-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build-unsigned-ipa:
+    name: Build Unsigned IPA
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+          run_install: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+          cache: pnpm
+
+      - name: Install Rust toolchain (iOS device target)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-ios
+
+      - name: Cache Rust build artifacts
+        uses: swatinem/rust-cache@v2
+
+      - name: Install frontend dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build frontend assets
+        run: pnpm run web:build
+
+      - name: Install CocoaPods
+        run: |
+          gem install cocoapods --no-document
+          cd src-tauri/gen/apple
+          pod install --repo-update
+
+      - name: Build Rust library for iOS device
+        env:
+          CONFIGURATION: ${{ inputs.configuration || 'release' }}
+        run: |
+          CONFIG_UPPER=$(echo "$CONFIGURATION" | tr '[:lower:]' '[:upper:]')
+          cargo build \
+            --manifest-path src-tauri/Cargo.toml \
+            --target aarch64-apple-ios \
+            --profile "$( [ "$CONFIGURATION" = "release" ] && echo release || echo dev )" \
+            --lib
+
+          # Copy to location Xcode expects
+          EXTERNALS_DIR="src-tauri/gen/apple/Externals/arm64/$CONFIG_UPPER"
+          mkdir -p "$EXTERNALS_DIR"
+          cp "target/aarch64-apple-ios/$( [ "$CONFIGURATION" = "release" ] && echo release || echo debug )/libtauritavern_lib.a" \
+            "$EXTERNALS_DIR/libapp.a"
+
+      - name: Build unsigned archive with xcodebuild
+        id: xcode_build
+        env:
+          CONFIGURATION: ${{ inputs.configuration || 'release' }}
+        run: |
+          CONFIG_UPPER=$(echo "$CONFIGURATION" | tr '[:lower:]' '[:upper:]')
+
+          xcodebuild archive \
+            -workspace src-tauri/gen/apple/tauritavern.xcworkspace \
+            -scheme tauritavern_iOS \
+            -configuration "$CONFIG_UPPER" \
+            -destination "generic/platform=iOS" \
+            -archivePath "$RUNNER_TEMP/tauritavern.xcarchive" \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO \
+            AD_HOC_CODE_SIGNING_ALLOWED=YES \
+            DEVELOPMENT_TEAM="" \
+            | xcpretty || true
+
+          # Verify archive was created
+          if [ ! -d "$RUNNER_TEMP/tauritavern.xcarchive" ]; then
+            echo "ERROR: xcarchive was not created."
+            exit 1
+          fi
+
+      - name: Package xcarchive into unsigned IPA
+        run: |
+          APP_PATH=$(find "$RUNNER_TEMP/tauritavern.xcarchive/Products" -name "*.app" | head -1)
+          if [ -z "$APP_PATH" ]; then
+            echo "ERROR: No .app bundle found in xcarchive."
+            exit 1
+          fi
+
+          PAYLOAD_DIR="$RUNNER_TEMP/Payload"
+          mkdir -p "$PAYLOAD_DIR"
+          cp -r "$APP_PATH" "$PAYLOAD_DIR/"
+
+          cd "$RUNNER_TEMP"
+          zip -qr tauritavern-unsigned.ipa Payload/
+
+          echo "IPA_PATH=$RUNNER_TEMP/tauritavern-unsigned.ipa" >> "$GITHUB_ENV"
+          echo "IPA built: $(du -sh tauritavern-unsigned.ipa | cut -f1)"
+
+      - name: Upload unsigned IPA as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: tauritavern-unsigned-ipa-${{ github.sha }}
+          path: ${{ env.IPA_PATH }}
+          retention-days: 14
+          if-no-files-found: error
