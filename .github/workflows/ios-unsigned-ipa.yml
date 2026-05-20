@@ -81,9 +81,16 @@ jobs:
 
           # Copy to location Xcode expects
           EXTERNALS_DIR="src-tauri/gen/apple/Externals/arm64/$CONFIG_UPPER"
+          LIB_PROFILE_DIR="$( [ "$CONFIGURATION" = "release" ] && echo release || echo debug )"
+          LIB_PATH="src-tauri/target/aarch64-apple-ios/$LIB_PROFILE_DIR/libtauritavern_lib.a"
+          if [ ! -f "$LIB_PATH" ]; then
+            echo "ERROR: Rust static library was not found at $LIB_PATH"
+            echo "Available iOS build outputs:"
+            find src-tauri/target/aarch64-apple-ios -maxdepth 3 -type f -name "*.a" -print 2>/dev/null || true
+            exit 1
+          fi
           mkdir -p "$EXTERNALS_DIR"
-          cp "target/aarch64-apple-ios/$( [ "$CONFIGURATION" = "release" ] && echo release || echo debug )/libtauritavern_lib.a" \
-            "$EXTERNALS_DIR/libapp.a"
+          cp "$LIB_PATH" "$EXTERNALS_DIR/libapp.a"
 
       - name: Build unsigned archive with xcodebuild
         id: xcode_build
