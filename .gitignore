@@ -32,3 +32,4 @@ release
 
 # Local upstream checkout (junction/symlink)
 sillytavern-*
+.codex-research-js-slash-runner/*
